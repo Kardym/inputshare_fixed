@@ -27,7 +27,7 @@ def install_server(device: AdbDevice) -> Exception | None:
     server_binary_path = Path.joinpath(script_path, SERVER_EXECUTABLE_NAME)
     try:
         device.install(str(server_binary_path))
-    except AdbInstallError | BrokenPipeError as e:
+    except (AdbInstallError, BrokenPipeError) as e:
         LOGGER.write(LogType.Error, "Reporter install error: " + str(e))
         return e
     except Exception as e:

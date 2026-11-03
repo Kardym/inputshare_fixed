@@ -1,4 +1,3 @@
-import socket
 import sys
 from typing import Callable
 
@@ -31,7 +30,7 @@ def close_notification_resolver(errno: Exception | None):
             close_notification = Notification(
                 i18n(["NetworkError", "网络错误"]),
                 i18n(["Android client installation failed, please retry.", "安卓客户端安装失败，请重试。"]))
-        case socket.timeout | TimeoutError():
+        case TimeoutError(): # `socket.timeout` is an alias of `TimeoutError`
             close_notification = Notification(
                 i18n(["NetworkError", "网络错误"]),
                 i18n(["Connection with device timeout, please retry.", "设备连接超时，请重试。"]))

@@ -27,7 +27,8 @@ class ConfigFile:
 class ConfigManager:
     def __init__(self):
         file_path = self.path = ConfigManager.storage_path()
-        is_exists = self.is_first_use = os.path.exists(file_path)
+        is_exists = os.path.exists(file_path)
+        self.is_first_use = not is_exists
         if not is_exists: ConfigManager.create_default_config(file_path)
         self.config = ConfigManager.read_config(file_path)
         atexit.register(self.save)
@@ -52,6 +53,8 @@ class ConfigManager:
         filtered_fields = {}
         for key, item in config_content.items():
             if key not in expected_fields: continue
+            # JSON has no float/int distinction, e.g. `"mouse_speed": 3`
+            if expected_fields[key] == float and type(item) == int: item = float(item)
             if type(item) != expected_fields[key]: continue
             filtered_fields[key] = item
         return ConfigFile(**filtered_fields)

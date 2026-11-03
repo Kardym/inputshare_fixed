@@ -47,13 +47,25 @@ def test_read_config_filters_unknown_and_mistyped_fields(tmp_path):
     assert config.edge_toggling is True
     assert config.trigger_margin == ConfigFile().trigger_margin
 
-def test_read_config_rejects_integer_mouse_speed(tmp_path):
-    # characterization: `mouse_speed` is typed as float, so an integer JSON value is dropped.
+def test_read_config_accepts_integer_for_float_field(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"mouse_speed": 3}))
+    config = ConfigManager.read_config(str(path))
+    assert config.mouse_speed == 3.0 and type(config.mouse_speed) == float
+    path.write_text(json.dumps({"mouse_speed": 3.5}))
+    assert ConfigManager.read_config(str(path)).mouse_speed == 3.5
+
+def test_read_config_does_not_coerce_bool_to_float(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"mouse_speed": True}))
     assert ConfigManager.read_config(str(path)).mouse_speed == ConfigFile().mouse_speed
-    path.write_text(json.dumps({"mouse_speed": 3.0}))
-    assert ConfigManager.read_config(str(path)).mouse_speed == 3.0
+
+def test_config_manager_is_first_use(tmp_path, monkeypatch):
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(ConfigManager, "storage_path", staticmethod(lambda: str(path)))
+    monkeypatch.setattr("atexit.register", lambda _: None)
+    assert ConfigManager().is_first_use is True
+    assert ConfigManager().is_first_use is False
 
 def test_read_config_non_dict_returns_default(tmp_path):
     path = tmp_path / "config.json"

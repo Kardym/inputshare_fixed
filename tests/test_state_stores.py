@@ -14,13 +14,12 @@ def test_keymod_keyup_of_released_key_is_noop():
     state.keyup(HIDKeymod.HID_MOD_LEFT_SHIFT)
     assert state.key == 0
 
-def test_keymod_combined_alt_partial_release():
-    # characterization: `HID_MOD_ALT` (left|right) is released by XOR only if any bit is set,
-    # which toggles the bits that were not pressed.
+def test_keymod_combined_alt_release_clears_only_pressed_bits():
     state = KeymodStateStore()
     state.keydown(HIDKeymod.HID_MOD_LEFT_ALT)
+    state.keydown(HIDKeymod.HID_MOD_LEFT_SHIFT)
     state.keyup(HIDKeymod.HID_MOD_ALT)
-    assert state.key == HIDKeymod.HID_MOD_RIGHT_ALT
+    assert state.key == HIDKeymod.HID_MOD_LEFT_SHIFT
 
 def test_mouse_button_down_up():
     state = MouseButtonStateStore()
@@ -29,8 +28,7 @@ def test_mouse_button_down_up():
     state.mouse_up(HID_MouseButton.MOUSE_BUTTON_LEFT)
     assert state.mouse_button == HID_MouseButton.MOUSE_BUTTON_RIGHT
 
-def test_mouse_button_up_without_down_sets_bit():
-    # characterization: `mouse_up` uses XOR, so releasing an unpressed button sets it.
+def test_mouse_button_up_without_down_is_noop():
     state = MouseButtonStateStore()
     state.mouse_up(HID_MouseButton.MOUSE_BUTTON_LEFT)
-    assert state.mouse_button == HID_MouseButton.MOUSE_BUTTON_LEFT
+    assert state.mouse_button == HID_MouseButton.MOUSE_BUTTON_NONE

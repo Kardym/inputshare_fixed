@@ -23,7 +23,7 @@ class MouseButtonStateStore:
     def mouse_down(self, button: HID_MouseButton):
         self.mouse_button |= button.value
     def mouse_up(self, button: HID_MouseButton):
-        self.mouse_button ^= button.value
+        self.mouse_button &= ~button.value
 
 HID_MOUSE_REPORT_DESC = bytes([
     # Usage Page (Generic Desktop)
@@ -134,8 +134,7 @@ class KeymodStateStore:
     def keydown(self, key: HIDKeymod):
         self.key |= key.value
     def keyup(self, key: HIDKeymod):
-        if self.has_key(key):
-            self.key ^= key.value
+        self.key &= ~key.value
     def is_key(self, key: HIDKeymod):
         return self.key == key.value
     def has_key(self, key: HIDKeymod):

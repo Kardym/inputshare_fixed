@@ -1,6 +1,5 @@
 import socket
 import threading
-import socket
 import subprocess
 import time
 
@@ -49,18 +48,19 @@ cleanup=false raw_stream=true send_dummy_byte=true max_size=4096"
 
 def try_connect_server(host: str, port: int=SERVER_PORT) -> socket.socket | Exception:
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((host, port))
-
     client_socket.settimeout(3)
     try:
+        client_socket.connect((host, port))
         dummy = client_socket.recv(4)
         client_socket.settimeout(None)
-    except socket.timeout as e: return e
-    except Exception as e: return e
+    except Exception as e:
+        client_socket.close()
+        return e
 
     LOGGER.write(LogType.Info, "dummy byte: " + str(dummy))
     if len(dummy) == 1 and dummy[0] == 0x00:
         return client_socket
+    client_socket.close()
     return InvalidDummyByteException()
 
 # --- --- --- --- --- ---

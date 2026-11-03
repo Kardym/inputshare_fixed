@@ -98,8 +98,8 @@ def callback_context_wrapper(
         generic_key = key_scancode_map[k]
         shortcut_data = _customized_shortcuts(generic_key, keymod_state, is_redirecting)
         if shortcut_data is not None:
-            for data in shortcut_data:
-                send_data_async(data); return
+            for data in shortcut_data: send_data_async(data)
+            return
 
         if type(generic_key) == HIDKeymod:
             keymod_state.keydown(generic_key)
@@ -170,7 +170,7 @@ def callback_context_wrapper(
                     schedule_exit(res); break
                 no_move_timer = None
                 continue
-            except: pass
+            except queue.Empty: pass
 
             # when there is no mouse movement for `WAKEUP_INTERVAL_SEC * 2` seconds
             # and the `keep_wakeup` is True,

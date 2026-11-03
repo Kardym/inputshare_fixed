@@ -22,7 +22,7 @@ py -3.12 -m venv .venv
 
 ## 안전망: 특성 테스트
 
-`tests/`의 테스트는 **현재 동작을 그대로 고정**하는 특성 테스트(characterization test)입니다. 기기와 소켓 없이 실행됩니다.
+`tests/`의 테스트는 **현재 동작을 그대로 고정**하는 특성 테스트(characterization test)입니다. 실기기 없이 실행됩니다.
 
 | 파일 | 고정하는 대상 |
 | --- | --- |
@@ -31,9 +31,10 @@ py -3.12 -m venv .venv
 | `test_state_stores.py` | `KeymodStateStore`, `MouseButtonStateStore`의 비트 연산 |
 | `test_callbacks.py` | `callback_context_wrapper`가 입력 이벤트를 어떤 바이트로 보내는지 (가짜 소켓 사용) |
 | `test_utils_and_config.py` | 설정 파일 파싱, i18n, `DevicePosition`, `TimeCounter` |
+| `test_server.py` | reporter 설치 실패 처리, scrcpy 소켓 연결과 dummy byte 검사 (로컬 가짜 서버 사용) |
 
 - `tests/conftest.py`는 메모리상의 설정 객체를 주입하여, 테스트가 실제 `config.json`을 읽거나 쓰지 않도록 합니다.
-- 이름에 `characterization`이라는 주석이 붙은 테스트는 **버그로 의심되는 현재 동작**을 고정한 것입니다. 해당 동작을 의도적으로 고친다면 테스트도 함께 수정해야 합니다.
+- 서버 배포 경로(`server/__init__.py`의 `deploy_*`, 실제 ADB 호출)는 테스트가 없습니다.
 - UI(`ui/`), ADB/네트워크(`utils/adb_controller.py`, `utils/network/`), 서버 배포(`server/`)와 `input/controller.py`의 메인 루프는 테스트가 없습니다. 이 영역을 수정할 때는 실기기로 확인해야 합니다.
 
 ## 모듈 구조
@@ -64,25 +65,28 @@ main.py                     진입점: ADB 서버 → 연결 창 → scrcpy 서�
    - `input/edge_portal.py`: import 시점에 `screen_size()`와 `get_config()`를 호출하므로, 설정 창에서 엣지 전환 설정을 바꿔도 재시작하기 전까지 반영되지 않습니다.
    - `server/*_receiver.py`: import 시점에 `get_port()`로 포트를 탐색하고, 실패하면 `sys.exit(1)`을 호출합니다.
    - `utils/adb_controller.py`: import 시점에 `ADBUTILS_ADB_PATH` 환경 변수를 설정합니다.
-4. **오류 처리 방식의 혼재**: `X | Exception`을 반환값으로 쓰는 방식과 예외를 던지는 방식이 섞여 있습니다. `callbacks.py:173`의 `except: pass`는 큐 타임아웃 외의 모든 예외까지 무시합니다.
+4. **오류 처리 방식의 혼재**: `X | Exception`을 반환값으로 쓰는 방식과 예외를 던지는 방식이 섞여 있습니다.
 5. **팩토리와 클로저의 남용**: `*_factory()` 함수가 스레드를 띄우고 종료 함수를 반환하는 패턴이 반복됩니다. 수명 주기(start/stop)를 갖는 클래스로 정리할 수 있습니다.
 6. **Windows 전용 가정**: `adb-bin/adb.exe` 경로, `subprocess.CREATE_NO_WINDOW`, 문자열로 조립한 명령어(`Popen(command_string)`)를 사용합니다.
 
-### 버그 또는 의심되는 동작
+### 수정한 버그
 
-| 위치 | 내용 | 테스트 |
+아래 버그는 모두 수정했고, 회귀 테스트로 수정된 동작을 고정했습니다.
+
+| 위치 | 수정 전 동작 | 테스트 |
 | --- | --- | --- |
-| `server/reporter_receiver.py:30` | `except AdbInstallError \| BrokenPipeError`는 예외가 발생하면 `TypeError`를 일으킵니다. 튜플 `(A, B)`로 써야 합니다. | 없음 |
-| `input/callbacks.py:101-102` | 단축키 처리 루프 안에서 `return`하므로 첫 번째 이벤트만 전송됩니다. Alt+↑/↓는 `KeyEmptyEvent`가 전송되지 않아 키가 눌린 상태로 남을 수 있습니다. | `test_alt_up_shortcut_sends_only_first_event` |
-| `scrcpy_client/hid_def.py:26` | `mouse_up`이 XOR을 사용하므로, 누르지 않은 버튼을 떼면 오히려 눌린 상태가 됩니다. | `test_mouse_button_up_without_down_sets_bit` |
-| `scrcpy_client/hid_def.py:137` | `keyup(HID_MOD_ALT)`처럼 결합 마스크를 떼면, 눌리지 않았던 비트가 켜집니다. | `test_keymod_combined_alt_partial_release` |
-| `utils/config_manager.py:55` | `type(item) != float` 검사 때문에 `"mouse_speed": 3`처럼 정수로 저장된 값은 버려집니다. | `test_read_config_rejects_integer_mouse_speed` |
-| `utils/config_manager.py:30` | `is_first_use`에 `os.path.exists()` 결과를 그대로 넣으므로 의미가 반대입니다. (현재 사용처는 없습니다.) | 없음 |
-| `main.py:34` | `case socket.timeout \| ...`의 `socket.timeout`은 클래스 패턴이 아니라 값 패턴입니다. 뒤의 `TimeoutError()`가 대신 잡아 주기 때문에 현재는 동작합니다. | 없음 |
-| `server/scrcpy_receiver.py:52` | `client_socket.connect()`가 `try` 바깥에 있어서, 연결 거부 예외가 그대로 전파됩니다. | 없음 |
+| `server/reporter_receiver.py` `install_server` | `except AdbInstallError \| BrokenPipeError`가 예외 발생 시 `TypeError`를 일으켜, 설치 실패 알림 대신 앱이 비정상 종료되었습니다. | `test_server.py::test_install_server_*` |
+| `input/callbacks.py` `keyboard_press_callback` | 단축키 루프 안에서 `return`하여 첫 번째 이벤트만 전송했습니다. Alt+↑/↓ 이후 키가 눌린 상태로 남고, Alt+[ ] \ 는 미디어 키를 떼는 이벤트가 빠졌습니다. | `test_alt_up_shortcut_sends_key_then_release`, `test_alt_bracket_shortcut_*` |
+| `input/callbacks.py` `mouse_movement_sender` | `except: pass`가 큐 타임아웃 외의 예외까지 무시했습니다. 이제 `queue.Empty`만 처리합니다. | 없음 |
+| `scrcpy_client/hid_def.py` `MouseButtonStateStore.mouse_up` | XOR을 사용하여, 누르지 않은 버튼을 떼면 눌린 상태가 되었습니다. | `test_mouse_button_up_without_down_is_noop` |
+| `scrcpy_client/hid_def.py` `KeymodStateStore.keyup` | 결합 마스크(`HID_MOD_ALT` 등)를 떼면 눌리지 않았던 비트가 켜졌습니다. | `test_keymod_combined_alt_release_clears_only_pressed_bits` |
+| `utils/config_manager.py` `read_config` | `"mouse_speed": 3`처럼 정수로 저장된 값이 버려졌습니다. 이제 float 필드에 한해 정수를 변환합니다. | `test_read_config_accepts_integer_for_float_field` |
+| `utils/config_manager.py` `is_first_use` | 파일 존재 여부를 그대로 넣어 의미가 반대였습니다. | `test_config_manager_is_first_use` |
+| `main.py` `close_notification_resolver` | `case socket.timeout \| ...`가 값 패턴으로 해석되었습니다. `case TimeoutError()`로 정리했습니다. | 없음 |
+| `server/scrcpy_receiver.py` `try_connect_server` | `connect()`가 `try` 바깥에 있어서 연결 거부 예외가 그대로 전파되었고, 실패 시 소켓을 닫지 않았습니다. | `test_server.py::test_try_connect_server_*` |
 
 ### 의존성과 호환성
 
 - `adbutils==1.2.15`는 `pkg_resources`를 사용하므로 `setuptools<81`이 필요합니다. adbutils를 2.x로 올리면 이 제약을 없앨 수 있지만 API가 바뀌었습니다.
 - `locale.getdefaultlocale()`(`utils/__init__.py:23`)는 Python 3.15에서 제거될 예정입니다.
-- ruff 경고: `server/scrcpy_receiver.py`의 `socket` 중복 import 1건, `utils/network/__init__.py`의 `import *` 4건입니다.
+- ruff 경고: `utils/network/__init__.py`의 `import *` 4건이 남아 있습니다.

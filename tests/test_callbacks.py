@@ -6,7 +6,7 @@ from pynput import keyboard, mouse
 from scrcpy_client import ControlMsgType
 from scrcpy_client.android_def import AKeyCode, AKeyEventAction
 from scrcpy_client.hid_def import HID_ID_KEYBOARD, HID_MouseButton, KeymodStateStore
-from scrcpy_client.hid_event import KeyEvent
+from scrcpy_client.hid_event import KeyEmptyEvent, KeyEvent
 from scrcpy_client.inject_event import InjectKeyCode
 from scrcpy_client.sdl_def import SDL_Scancode
 from input.callbacks import _compute_mouse_pointer_diff, callback_context_wrapper
@@ -69,13 +69,23 @@ def test_function_key_injects_android_keycode(wrapped):
         InjectKeyCode(AKeyCode.AKEYCODE_HOME, AKeyEventAction.AKEY_EVENT_ACTION_UP).serialize(),
     ]
 
-def test_alt_up_shortcut_sends_only_first_event(wrapped):
-    # characterization: `keyboard_press_callback` returns inside the shortcut loop,
-    # so only the first of the two shortcut events is sent.
+def test_alt_up_shortcut_sends_key_then_release(wrapped):
     sock, key_press, _, _ = wrapped
     key_press(keyboard.Key.alt_l, False)
     key_press(keyboard.KeyCode.from_vk(38), False)
-    assert sock.keyboard_inputs() == [KeyEvent(KeymodStateStore(), [SDL_Scancode.SDL_SCANCODE_UP]).serialize()]
+    assert sock.keyboard_inputs() == [
+        KeyEvent(KeymodStateStore(), [SDL_Scancode.SDL_SCANCODE_UP]).serialize(),
+        KeyEmptyEvent().serialize(),
+    ]
+
+def test_alt_bracket_shortcut_sends_media_key_down_and_up(wrapped):
+    sock, key_press, _, _ = wrapped
+    key_press(keyboard.Key.alt_l, False)
+    key_press(keyboard.KeyCode.from_char("["), False)
+    assert sock.keycodes() == [
+        InjectKeyCode(AKeyCode.AKEYCODE_MEDIA_PREVIOUS, AKeyEventAction.AKEY_EVENT_ACTION_DOWN).serialize(),
+        InjectKeyCode(AKeyCode.AKEYCODE_MEDIA_PREVIOUS, AKeyEventAction.AKEY_EVENT_ACTION_UP).serialize(),
+    ]
 
 def test_mouse_click_while_redirecting(wrapped):
     sock, _, _, mouse_click = wrapped
