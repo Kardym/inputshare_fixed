@@ -35,7 +35,7 @@ cleanup=false raw_stream=true send_dummy_byte=true max_size=4096"
             f"{ADB_BIN_PATH} -s {primary_device.serial} -P {ADB_SERVER_PORT} shell {INSTALL_SCRCPY_SERVER_COMMAND}",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         output = process.stdout.readline() # type: ignore
@@ -43,6 +43,12 @@ cleanup=false raw_stream=true send_dummy_byte=true max_size=4096"
         LOGGER.write(LogType.Error, "Failed to start subprocess: " + str(e))
         return e
     LOGGER.write(LogType.Server, output)
+    def relay_output(stream):
+        for line in stream:
+            LOGGER.write(LogType.Server, line.rstrip())
+    for stream in (process.stdout, process.stderr):
+        if stream is not None:
+            threading.Thread(target=relay_output, args=(stream,), daemon=True).start()
     time.sleep(1)
     return process
 

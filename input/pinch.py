@@ -65,7 +65,6 @@ class PinchGestures:
 
     def __init__(self, send: Callable[[bytes], None], read_position=None):
         self.send = send
-        # Cache the selected device per connection; do not log device selection on every poll.
         device = None
         def read_selected_pointer():
             nonlocal device
@@ -79,6 +78,8 @@ class PinchGestures:
         self.lock = threading.RLock()
         self.anchor: ScreenPosition | None = None
         self.second: ScreenPosition | None = None
+        self.cursor_position: ScreenPosition | None = None
+        self.anchor_down = False
         self.session = 0
         self.dragging = False
 
@@ -87,48 +88,82 @@ class PinchGestures:
         with self.lock:
             return self.anchor is not None
 
-    def _touch(self, pointer_id, position, action):
-        event = InjectTouchEvent(position, action,
-                                 AMotionEventButtons.AMOTION_EVENT_BUTTON_NONE,
-                                 pointer_id=pointer_id)
-        self.send(event.serialize())
+    @property
+    def touching(self):
+        with self.lock:
+            return self.anchor_down
+
+    def forward_mouse(self, data, send):
+        # This check and the send share the contact-state lock. Even a queued
+        # zero-movement HID report must not interrupt a touchscreen gesture.
+        with self.lock:
+            if not self.anchor_down:
+                return send(data)
+        return None
+
+    def _event(self, pointer_id, position, action):
+        return InjectTouchEvent(position, action, AMotionEventButtons.AMOTION_EVENT_BUTTON_NONE,
+                                pointer_id=pointer_id).serialize()
 
     def start(self):
         with self.lock:
             if self.anchor is not None:
                 return
             try:
-                position = self.read_position()
+                self.anchor = self.read_position()
             except Exception as error:
                 LOGGER.write(LogType.Error, 'Cannot read pinch cursor: ' + str(error))
                 return
-            if position is None:
+            if self.anchor is None:
                 LOGGER.write(LogType.Info, 'Pinch unavailable: Android mouse cursor position not reported.')
                 return
             self.session += 1
-            self.anchor = position
-            self._touch(self.ANCHOR_ID, position, AMotionEventAction.AMOTION_EVENT_ACTION_DOWN)
+            # Remember the anchor now, but put BOTH fingers down only when a
+            # gesture starts. This avoids long presses and preserves mouse hover
+            # coordinates while the user positions their second finger.
+            self.cursor_position = self.anchor
+            LOGGER.write(LogType.Info, 'Pinch anchor ready.')
 
-    def _release_second(self):
-        self.session += 1 # Invalidate a previous drag worker before another click.
+    def _begin_contacts(self, position):
+        self.anchor_down = True
+        self.second = position
+        self.cursor_position = position
+        self.send(self._event(self.ANCHOR_ID, self.anchor, AMotionEventAction.AMOTION_EVENT_ACTION_DOWN)
+                  + self._event(self.MOVING_ID, position, AMotionEventAction.AMOTION_EVENT_ACTION_DOWN))
+
+    def _lift_contacts(self):
+        self.session += 1
+        events = b''
         if self.second is not None:
-            self._touch(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_UP)
-            self.second = None
+            events += self._event(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_UP)
+        if self.anchor_down:
+            events += self._event(self.ANCHOR_ID, self.anchor, AMotionEventAction.AMOTION_EVENT_ACTION_UP)
+        if events:
+            self.send(events)
+        self.second = None
+        self.anchor_down = False
         self.dragging = False
 
     def stop(self):
         with self.lock:
-            self.session += 1
-            self._release_second()
-            if self.anchor is not None:
-                self._touch(self.ANCHOR_ID, self.anchor, AMotionEventAction.AMOTION_EVENT_ACTION_UP)
-                self.anchor = None
+            was_active = self.anchor is not None
+            self._lift_contacts()
+            self.anchor = None
+            if was_active:
+                LOGGER.write(LogType.Info, 'Pinch released.')
 
     def _current_position(self):
         position = self.read_position()
-        if position is None or self.anchor is None or position.size != self.anchor.size:
+        if self.anchor is None:
+            return None
+        # Mouse hover can be absent after a touch gesture until the physical
+        # cursor moves again. Keep Alt armed instead of falling back to scroll.
+        if position is None:
+            return self.cursor_position or self.anchor
+        if position.size != self.anchor.size:
             self.stop()
             return None
+        self.cursor_position = position
         return position
 
     def click(self, pressed):
@@ -136,9 +171,9 @@ class PinchGestures:
             if self.anchor is None:
                 return
             if not pressed:
-                self._release_second()
+                self._lift_contacts()
                 return
-            if self.second is not None:
+            if self.dragging:
                 return
             try:
                 position = self._current_position()
@@ -148,10 +183,9 @@ class PinchGestures:
                 return
             if position is None:
                 return
-            self.second = position
+            self._begin_contacts(position)
             self.dragging = True
-            self._touch(self.MOVING_ID, position, AMotionEventAction.AMOTION_EVENT_ACTION_DOWN)
-            threading.Thread(target=self._follow_cursor, args=(self.session,), daemon=True).start()
+            LOGGER.write(LogType.Info, 'Pinch drag started.')
 
     def update(self, position, session):
         with self.lock:
@@ -162,22 +196,20 @@ class PinchGestures:
                 return
             if position.point != self.second.point:
                 self.second = position
-                self._touch(self.MOVING_ID, position, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE)
+                self.cursor_position = position
+                self.send(self._event(self.MOVING_ID, position, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE))
 
-    def _follow_cursor(self, session):
-        while True:
-            time.sleep(0.025)
-            with self.lock:
-                if session != self.session or not self.dragging:
-                    return
-            try:
-                self.update(self.read_position(), session)
-            except Exception as error:
-                with self.lock:
-                    if session == self.session:
-                        self.stop()
-                LOGGER.write(LogType.Error, 'Pinch tracking stopped: ' + str(error))
-                return
+    def move(self, dx, dy):
+        with self.lock:
+            if not self.dragging or self.second is None:
+                return False
+            # Once fingers are down Android may no longer report a mouse hover
+            # cursor. Drive the second touch directly from relative PC movement.
+            pos = self.second
+            point = ScreenPoint(max(0, min(pos.size.width - 1, pos.point.x + dx)),
+                                max(0, min(pos.size.height - 1, pos.point.y + dy)))
+            self.update(ScreenPosition(pos.size, point), self.session)
+            return True
 
     def wheel(self, dy):
         with self.lock:
@@ -191,7 +223,6 @@ class PinchGestures:
                 LOGGER.write(LogType.Error, 'Pinch zoom stopped: ' + str(error))
                 return
             anchor = self.anchor
-            # Put the moving finger toward the centre, where it has room to move.
             x, y = anchor.point.x, anchor.point.y
             w, h = anchor.size.width, anchor.size.height
             dx, dy_axis = ((1 if x < w / 2 else -1), 0) if w >= h else (0, (1 if y < h / 2 else -1))
@@ -202,12 +233,12 @@ class PinchGestures:
             end = max(2, min(room, radius * math.exp(max(-4, min(4, dy)) * 0.18)))
             def position(distance):
                 return ScreenPosition(anchor.size, ScreenPoint(round(x + dx * distance), round(y + dy_axis * distance)))
-            self.second = position(radius)
-            self._touch(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_DOWN)
+            self._begin_contacts(position(radius))
+            LOGGER.write(LogType.Info, 'Pinch wheel: ' + ('zoom in' if dy > 0 else 'zoom out'))
             try:
                 for step in range(1, 7):
                     self.second = position(radius + (end - radius) * step / 6)
-                    self._touch(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE)
-                    time.sleep(0.006)
+                    self.send(self._event(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE))
+                    time.sleep(0.012)
             finally:
-                self._release_second()
+                self._lift_contacts()

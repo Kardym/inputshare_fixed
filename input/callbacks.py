@@ -186,7 +186,7 @@ def callback_context_wrapper(
                 # and the loop frequency is `1 / (INTERVAL_SEC * 2)`.
                 dx, dy = movement_queue.get(block=True, timeout=INTERVAL_SEC)
                 event = MouseMoveEvent(dx, dy, mouse_button_state)
-                if (res := send_data(event.serialize())) is not None:
+                if (res := pinch.forward_mouse(event.serialize(), send_data)) is not None:
                     schedule_exit(res); break
                 no_move_timer = None
                 continue
@@ -207,7 +207,7 @@ def callback_context_wrapper(
             # when there is no mouse movement within `WAKEUP_INTERVAL_SEC * 2` seconds,
             # send zero movement mouse event.
             event = MouseMoveEvent(0, 0, mouse_button_state)
-            if (res := send_data(event.serialize())) is not None:
+            if (res := pinch.forward_mouse(event.serialize(), send_data)) is not None:
                 schedule_exit(res); break
     threading.Thread(target=mouse_movement_sender, daemon=True).start()
 
@@ -227,6 +227,8 @@ def callback_context_wrapper(
             return None
         diff_movement = _compute_mouse_pointer_diff(cur_x, cur_y, *last_mouse_point)
         last_mouse_point = (cur_x, cur_y)
+        if pinch.move(*diff_movement):
+            return None
         try: movement_queue.put(diff_movement, block=False)
         except queue.Full: movement_queue.get() # if the queue is full, remove the oldest element
 
@@ -239,6 +241,8 @@ def callback_context_wrapper(
             pinch.click(pressed)
             return None
 
+        if pinch.touching:
+            return None
         hid_button = HID_MouseButton.MOUSE_BUTTON_NONE
         keyevent_action = AKeyEventAction.AKEY_EVENT_ACTION_DOWN if pressed else AKeyEventAction.AKEY_EVENT_ACTION_UP
         match button:

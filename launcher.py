@@ -34,7 +34,7 @@ def usb_devices(output):
 
 def connected_usb_devices():
     result = subprocess.run([str(ADB), '-P', str(ADB_PORT), 'devices', '-l'],
-                            capture_output=True, text=True, timeout=8, creationflags=NO_WINDOW)
+                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=8, creationflags=NO_WINDOW)
     if result.returncode:
         raise OSError('ADB device discovery failed')
     return usb_devices(result.stdout)

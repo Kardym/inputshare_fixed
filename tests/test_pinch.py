@@ -14,7 +14,12 @@ def position(x=400, y=600, width=1080, height=2336):
 
 
 def decode(messages):
-    return [struct.unpack(">BBQIIHHHII", msg) for msg in messages if msg[0] == 2]
+    events = []
+    for msg in messages:
+        if msg[0] == 2:
+            assert len(msg) % 32 == 0
+            events.extend(struct.unpack(">BBQIIHHHII", msg[i:i + 32]) for i in range(0, len(msg), 32))
+    return events
 
 
 @pytest.fixture
@@ -22,7 +27,6 @@ def gesture(monkeypatch):
     sent = []
     cursor = SimpleNamespace(position=position())
     pinch = PinchGestures(sent.append, lambda: cursor.position)
-    monkeypatch.setattr(pinch, "_follow_cursor", lambda session: None)
     return pinch, cursor, sent
 
 
@@ -139,7 +143,7 @@ def test_wheel_rotation_cancels_anchor(gesture):
     cursor.position = position(width=2336, height=1080)
     pinch.wheel(1)
     assert not pinch.active
-    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (1, 0)]
+    assert not decode(sent)
 
 
 def test_reader_error_does_not_leave_contacts_pressed(gesture):
@@ -150,7 +154,7 @@ def test_reader_error_does_not_leave_contacts_pressed(gesture):
     pinch.read_position = fail
     pinch.click(True)
     assert not pinch.active
-    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (1, 0)]
+    assert not decode(sent)
 
 
 def test_callback_alt_gesture_consumes_click_wheel_and_cleanup(monkeypatch):
@@ -159,7 +163,6 @@ def test_callback_alt_gesture_consumes_click_wheel_and_cleanup(monkeypatch):
     instances = []
     def factory(send):
         pinch = PinchGestures(send, lambda: cursor.position)
-        pinch._follow_cursor = lambda session: None
         instances.append(pinch)
         return pinch
     monkeypatch.setattr(callbacks, "PinchGestures", factory)
@@ -173,7 +176,7 @@ def test_callback_alt_gesture_consumes_click_wheel_and_cleanup(monkeypatch):
     before = len(decode(sent))
     press(keyboard.Key.alt_l, True)
     scroll(0, 0, 0, 1, True)
-    assert len(decode(sent)) == before + 9
+    assert len(decode(sent)) == before + 10
     reset()
     assert not instances[0].active
     assert decode(sent)[-1][1:3] == (1, 0)
@@ -193,10 +196,10 @@ def test_pc_mode_keyboard_only_and_hotkey_shift_do_not_hold_touch(monkeypatch, c
     config.share_keyboard_only = False
     press(keyboard.Key.alt_l, True)
     press(keyboard.Key.shift_l, True)
-    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (1, 0)]
+    assert not decode(sent)
     release(keyboard.Key.alt_l, False)
     press(keyboard.Key.alt_l, True) # Shift is still down: hotkey order is irrelevant.
-    assert len(decode(sent)) == 2
+    assert not decode(sent)
     reset()
 
 
@@ -204,3 +207,67 @@ def test_parser_accepts_android17_display_indentation():
     dump = dump_pointer().replace("    CursorStatesByDisplay:", "  CursorStatesByDisplay:").replace("      LogicalDisplayId", "    LogicalDisplayId")
     dump = dump.replace("    LogicalDisplayId 0:\n", "    LogicalDisplayId 0:\n      TouchedWindows:\n")
     assert parse_pointer_position(dump) == position(540, 1168)
+
+
+def test_alt_alone_does_not_hold_a_long_press_or_destroy_mouse_hover(gesture):
+    pinch, cursor, sent = gesture
+    pinch.start()
+    assert pinch.active and not pinch.touching
+    assert not sent
+
+
+def test_drag_does_not_require_mouse_hover_after_touch_down(gesture):
+    pinch, cursor, sent = gesture
+    pinch.start()
+    cursor.position = position(700, 800)
+    pinch.click(True)
+    cursor.position = None # Android drops mouse hover state during touch.
+    assert pinch.move(40, -30)
+    assert pinch.second.point == ScreenPoint(740, 770)
+    assert pinch.touching
+    forwarded = []
+    pinch.forward_mouse(b'zero movement HID', forwarded.append)
+    assert forwarded == []
+    pinch.click(False)
+    assert not pinch.touching and pinch.active
+    pinch.forward_mouse(b'ordinary mouse', forwarded.append)
+    assert forwarded == [b'ordinary mouse']
+    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (0, 1), (2, 1), (1, 1), (1, 0)]
+    pinch.stop()
+
+
+def test_rapid_drag_moves_clamp_to_display(gesture):
+    pinch, cursor, sent = gesture
+    pinch.start()
+    pinch.click(True)
+    pinch.move(99999, -99999)
+    assert pinch.second.point == ScreenPoint(1079, 0)
+    pinch.stop()
+
+
+def test_hid_keepalive_cannot_interleave_between_touch_packets(gesture):
+    pinch, cursor, sent = gesture
+    forwarded = []
+    original_send = pinch.send
+    def send_with_keepalive(data):
+        pinch.forward_mouse(b'keepalive', forwarded.append)
+        original_send(data)
+    pinch.send = send_with_keepalive
+    pinch.start()
+    pinch.click(True)
+    pinch.move(20, 30)
+    pinch.click(False)
+    assert forwarded == []
+    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (0, 1), (2, 1), (1, 1), (1, 0)]
+    pinch.stop()
+
+
+def test_repeated_alt_wheel_survives_missing_hover_after_first_pulse(gesture):
+    pinch, cursor, sent = gesture
+    pinch.start()
+    pinch.wheel(1)
+    cursor.position = None
+    pinch.wheel(-1)
+    assert pinch.active and not pinch.touching
+    assert len(decode(sent)) == 20
+    pinch.stop()

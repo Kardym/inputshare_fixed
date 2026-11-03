@@ -35,7 +35,7 @@ Run `powershell -ExecutionPolicy Bypass -File scripts/set-startup.ps1` once to e
 
 - **Alt+Shift+E**: toggle PC / Android control.
 - **Alt+Shift+Q**: exit InputShare.
-- While controlling Android, hold **Alt** at the Android cursor to anchor one touch. Move elsewhere, then **left-click and drag** to move the second touch for pinch-to-zoom.
+- While controlling Android, hold **Alt** at the Android cursor to remember the anchor position. Both touches go down when the drag or wheel gesture starts. Move elsewhere, then **left-click and drag** to move the second touch for pinch-to-zoom.
 - **Alt+mouse wheel**: wheel up to zoom in, down to zoom out. Release Alt to lift all touches.
 - Gestures require Android to report the scrcpy mouse position via `dumpsys input`. Touch positions follow the real device cursor; cursor reads may add some latency. See [shortcuts](docs/shortcuts_en.md).
 
