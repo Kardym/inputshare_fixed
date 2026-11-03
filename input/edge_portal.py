@@ -4,7 +4,7 @@ import pynput
 
 from typing import Callable
 from server.reporter_receiver import DevicePosition
-from utils import VoidCallable
+from utils import VoidCallable, screen_size
 from utils.desktop import cursor_motion_bounds, in_trigger_zone
 from utils.config_manager import get_config
 from utils.logger import LOGGER, LogType
@@ -83,11 +83,25 @@ def create_edge_portal():
 def edge_portal_thread_factory() -> tuple[
     VoidCallable, VoidCallable, VoidCallable
 ]:
+    cursor_before_remote = None
     def start_edge_portal():
+        nonlocal cursor_before_remote
+        if pause_event.is_set():
+            cursor_before_remote = mouse_controller.position
+            width, height = screen_size()
+            edge_portal_passing_event.set()
+            mouse_controller.position = (width // 2, height // 2)
         pause_event.clear()
     def pause_edge_portal():
+        nonlocal cursor_before_remote
         pause_event.set()
+        if cursor_before_remote is not None:
+            bounds = cursor_motion_bounds(cursor_before_remote)
+            edge_portal_passing_event.set()
+            mouse_controller.position = bounds.clamp(cursor_before_remote, 2)
+            cursor_before_remote = None
     def close_edge_portal():
+        pause_edge_portal()
         close_event.set()
 
     close_event.clear()
