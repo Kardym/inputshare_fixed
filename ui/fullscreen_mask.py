@@ -60,12 +60,12 @@ def open_mask_window():
 
     label1 = ctk.CTkLabel(
         master=label_toplevel,
-        text=i18n(["Use <Ctrl>+<Alt>+q to quit", "使用 <Ctrl>+<Alt>+q 退出程序"]),
+        text=i18n(["Use <Alt>+<Shift>+q to quit", "使用 <Alt>+<Shift>+q 退出程序"]),
         font=larger_font,
     )
     label2 = ctk.CTkLabel(
         master=label_toplevel,
-        text=i18n(["Use <Ctrl>+<Alt>+s to toggle", "使用 <Ctrl>+<Alt>+s 切换控制"]),
+        text=i18n(["Use <Alt>+<Shift>+r to toggle", "使用 <Alt>+<Shift>+r 切换控制"]),
         font=larger_font,
     )
     label1.pack(padx=8, pady=4, anchor="w")

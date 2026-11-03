@@ -31,7 +31,7 @@ def schedule_toggle(force: bool | None = None):
 
     if force is None:
         # triggered by hotkey
-        keyboard_controller.release(keyboard.Key.ctrl)
+        keyboard_controller.release(keyboard.Key.shift)
         keyboard_controller.release(keyboard.Key.alt)
     is_redirecting = force if force is not None else not is_redirecting
     toggle_event.set()
