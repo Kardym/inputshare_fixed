@@ -11,7 +11,8 @@ def clamp(v: int, x: int, y: int) -> int:
     return min(max(v, x), y)
 
 def screen_size() -> tuple[int, int]:
-    monitor = screeninfo.get_monitors()[0]
+    monitors = screeninfo.get_monitors()
+    monitor = next((m for m in monitors if m.is_primary), monitors[0])
     return monitor.width, monitor.height
 
 def script_abs_path(_file: str) -> Path:

@@ -9,10 +9,10 @@ show_event = threading.Event()
 hide_event = threading.Event()
 exit_event = threading.Event()
 
-screen_width, screen_height = screen_size()
-
 def check_event(root: ctk.CTk, toplevel: ctk.CTkToplevel):
     def show_window(root: ctk.CTk, toplevel: ctk.CTkToplevel):
+        screen_width, screen_height = screen_size()
+        root.geometry(f"{screen_width}x{screen_height}+0+0")
         root.deiconify()
         root.focus_force()
         toplevel.deiconify()
@@ -43,7 +43,8 @@ def open_mask_window():
     root.wm_attributes("-fullscreen", True)
     root.configure(cursor="none")
     root.overrideredirect(True)
-    root.geometry(f"{screen_width}x{screen_height}")
+    screen_width, screen_height = screen_size()
+    root.geometry(f"{screen_width}x{screen_height}+0+0")
 
     larger_font = i18n([
         ctk.CTkFont(family="Arial", size=18),
