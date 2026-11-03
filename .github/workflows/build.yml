@@ -1,0 +1,105 @@
+name: Build Executables
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-win:
+    strategy:
+      matrix:
+        architecture: [x86_64]
+        python-version: [3.10.7]
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m venv build_venv
+          ./build_venv/Scripts/activate
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Build executable with PyInstaller
+        run: |
+          ./build_venv/Scripts/activate
+          ./build_venv/Scripts/pyinstaller `
+            --windowed `
+            --icon=ui/icon.ico `
+            --add-data "./ui/icon.ico;ui/" `
+            --add-data "./ui/icon.png;ui/" `
+            --add-data "./adb-bin/;adb-bin/" `
+            --add-data "./server/scrcpy-server;server/" `
+            --add-data "./server/reporter.apk;server/" `
+            --add-data "./build_venv/Lib/site-packages/customtkinter;customtkinter/" `
+            --noconfirm main.py
+        env:
+          PYTHONUNBUFFERED: 1
+
+      - name: Archive Windows executable
+        run: Compress-Archive -Path dist/main/ -DestinationPath InputShare-win-x64.zip
+        shell: pwsh
+      
+      - name: Compile .ISS to .EXE Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: setup.iss
+          options: /O+
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            InputShare-win-x64.zip
+            InputShare_setup.exe
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # build-linux:
+  #   strategy:
+  #     matrix:
+  #       architecture: [x86_64, aarch64]
+  #       python-version: [3.10.7]
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+
+  #     - name: Set up the environment
+  #       uses: actions/setup-python@v2
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+      
+  #     - name: Install dependencies
+  #       run: |
+  #         python -m venv build_venv
+  #         source ./build_venv/bin/activate
+  #         python -m pip install --upgrade pip
+  #         pip install pyinstaller
+  #         pip install -r requirements.txt
+
+  #     - name: Build executable with PyInstaller
+  #       run: |
+  #         source ./build_venv/bin/activate
+  #         ./build_venv/bin/pyinstaller --windowed --icon=ui/icon.ico --add-data="./ui/icon.ico:ui/" --add-data="./ui/icon.png:ui/" --add-data="./adb-bin/:adb-bin/" --add-data="./server/scrcpy-server:server/" --add-data="./build_venv/Lib/site-packages/customtkinter:customtkinter/" --noconfirm main.py
+  #       env:
+  #         PYTHONUNBUFFERED: 1
+
+  #     - name: Archive Linux executable
+  #       run: zip -j InputShare-linux-${{ matrix.architecture }}.zip dist/main
+  #       shell: bash
+
+  #     - name: Release
+  #       uses: softprops/action-gh-release@v2
+  #       with:
+  #         files: InputShare-linux-${{ matrix.architecture }}.zip
+  #         token: ${{ secrets.GITHUB_TOKEN }}

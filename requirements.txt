@@ -1,0 +1,8 @@
+adbutils==1.2.15
+customtkinter==5.2.2
+pynput==1.8.1
+notify_py==0.3.43
+pyperclip==1.9.0
+pystray==0.19.5
+screeninfo==0.8.1
+setuptools<81 # adbutils 1.2.15 imports pkg_resources; Python 3.12+ venvs no longer ship it

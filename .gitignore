@@ -1,0 +1,13 @@
+/.vscode
+
+/build
+/dist
+
+__pycache__/
+/.venv
+.pytest_cache/
+.ruff_cache/
+
+*.spec
+*.log
+*.json
