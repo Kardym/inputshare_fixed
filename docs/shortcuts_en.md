@@ -30,3 +30,10 @@ The shortcuts following are available after connection and not sharing:
 | `<Alt>+[` | Previous Media |
 | `<Alt>+]` | Next Media |
 | `<Alt>+\` | Play / Pause Media |
+
+## Two-finger gestures (while controlling Android)
+
+- Hold Alt at the Android cursor to hold the first touch. Move the cursor, then hold the left mouse button and drag for the second touch.
+- With Alt held, wheel up to zoom in or wheel down to zoom out. Release Alt to release all touches.
+- Alt+Shift+E switches control; Alt+Shift+Q exits. These combinations cancel an active gesture.
+- Requires Android to report the scrcpy mouse cursor in `dumpsys input`; gestures are disabled if its position is unavailable. Keyboard-only sharing does not use touch gestures.

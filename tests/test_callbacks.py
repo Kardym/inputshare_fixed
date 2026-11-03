@@ -34,7 +34,7 @@ class FakeSocket:
 def wrapped():
     sock = FakeSocket()
     (_send, _send_async, key_press, key_release,
-     _mouse_move, mouse_click, _mouse_scroll) = callback_context_wrapper(sock) # type: ignore
+     _mouse_move, mouse_click, _mouse_scroll, _release_inputs) = callback_context_wrapper(sock) # type: ignore
     return sock, key_press, key_release, mouse_click
 
 def test_mouse_pointer_diff_scaling(config):

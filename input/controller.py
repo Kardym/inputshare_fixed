@@ -1,6 +1,7 @@
 import threading
 import time
 from pynput import keyboard, mouse
+from typing import Callable
 from input import EXIT_KEY_COMBINATION, SWITCH_KEY_COMBINATION
 from scrcpy_client.clipboard_event import GetClipboardEvent, SetClipboardEvent
 from scrcpy_client.hid_event import KeyEmptyEvent
@@ -96,6 +97,7 @@ def main_loop(
     mouse_move_callback: MouseMoveCallback,
     mouse_click_callback: MouseClickCallback,
     mouse_scroll_callback: MouseScrollCallback,
+    release_inputs: Callable[[], None],
 ) -> Exception | None:
     global is_redirecting, keyboard_listener, main_errno, toggle_event
 
@@ -118,6 +120,7 @@ def main_loop(
                 show_mask(); start_edge_portal()
             LOGGER.write(LogType.Info, "Input redirecting enabled.")
         else:
+            release_inputs()
             send_data(KeyEmptyEvent().serialize())
             hide_mask(); pause_edge_portal()
             LOGGER.write(LogType.Info, "Input redirecting disabled.")
@@ -148,6 +151,7 @@ def main_loop(
         before_toggle(is_redirecting)
         keyboard_listener.stop()
 
+    release_inputs()
     mouse_listener.stop()
     exit_mask()
     close_edge_portal()

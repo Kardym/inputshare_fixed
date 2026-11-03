@@ -25,6 +25,14 @@ __InputShare__ enables you to share the keyboard and mouse of your computer with
 > 
 > <a href="https://apps.microsoft.com/detail/9nmwdkc9kp3t?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/></a>
 
+## Shortcuts in this version
+
+- **Alt+Shift+E**: toggle PC / Android control.
+- **Alt+Shift+Q**: exit InputShare.
+- While controlling Android, hold **Alt** at the Android cursor to anchor one touch. Move elsewhere, then **left-click and drag** to move the second touch for pinch-to-zoom.
+- **Alt+mouse wheel**: wheel up to zoom in, down to zoom out. Release Alt to lift all touches.
+- Gestures require Android to report the scrcpy mouse position via `dumpsys input`. Touch positions follow the real device cursor; cursor reads may add some latency. See [shortcuts](docs/shortcuts_en.md).
+
 ## Screenshots
 
 | Pairing | Connecting | Settings | System Tray |

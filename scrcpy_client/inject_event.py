@@ -34,9 +34,12 @@ class InjectTouchEvent:
         action: AMotionEventAction,
         buttons: AMotionEventButtons = AMotionEventButtons.AMOTION_EVENT_BUTTON_SECONDARY,
         action_button: AMotionEventButtons = AMotionEventButtons.AMOTION_EVENT_BUTTON_NONE,
+        *,
+        pointer_id: int = POINTER_ID_MOUSE,
     ) -> None:
         is_up = action == AMotionEventAction.AMOTION_EVENT_ACTION_UP
-        self.pressure = 0 if is_up else 1
+        self.pointer_id = pointer_id
+        self.pressure = 0 if is_up else 0xffff
         self.position = position
 
         self.action = action

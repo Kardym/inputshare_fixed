@@ -14,6 +14,7 @@ from scrcpy_client.hid_event import HIDKeyboardInitEvent, KeyEmptyEvent, KeyEven
 from scrcpy_client.inject_event import InjectKeyCode
 from scrcpy_client.sdl_def import SDL_Scancode
 from input.edge_portal import edge_portal_passing_event
+from input.pinch import PinchGestures
 from utils.config_manager import get_config
 
 CallbackResult = Exception | None
@@ -67,15 +68,18 @@ def callback_context_wrapper(
 ) -> tuple[
     SendDataCallback, SendDataAsyncCallback,
     KeyEventCallback, KeyEventCallback,
-    MouseMoveCallback, MouseClickCallback, MouseScrollCallback,
+    MouseMoveCallback, MouseClickCallback, MouseScrollCallback, Callable[[], None],
 ]:
     from input.controller import schedule_exit
 
     executor = ThreadPoolExecutor()
+    send_lock = threading.Lock()
     def send_data(data: bytes) -> CallbackResult:
         nonlocal client_socket, wakeup_counter
         wakeup_counter = 0
-        try: client_socket.sendall(data)
+        try:
+            with send_lock:
+                client_socket.sendall(data)
         except Exception as e: return e
         return None
     
@@ -86,6 +90,10 @@ def callback_context_wrapper(
                 .run_in_executor(executor, send_data, data)
             if res is not None: schedule_exit(res)
         asyncio.run(_async(data))
+
+    pinch = PinchGestures(send_data_async)
+    alt_keys = (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r, keyboard.Key.alt_gr)
+    shift_keys = (keyboard.Key.shift, keyboard.Key.shift_l, keyboard.Key.shift_r)
 
     keyboard_init = HIDKeyboardInitEvent()
     send_data(keyboard_init.serialize())
@@ -104,7 +112,16 @@ def callback_context_wrapper(
         if type(generic_key) == HIDKeymod:
             keymod_state.keydown(generic_key)
 
-        if not is_redirecting: return None
+        if not is_redirecting:
+            pinch.stop()
+            return None
+        if k in shift_keys:
+            pinch.stop() # Alt+Shift+E/Q must never leave contacts held.
+        if k in alt_keys:
+            if (not get_config().share_keyboard_only and not mouse_button_state.mouse_button
+                    and not keymod_state.key & HIDKeymod.HID_MOD_SHIFT.value):
+                pinch.start()
+            return None
         if type(generic_key) == AKeyCode:
             nonlocal manual_device_sleep
             if generic_key == AKeyCode.AKEYCODE_SOFT_SLEEP: manual_device_sleep = True
@@ -124,8 +141,11 @@ def callback_context_wrapper(
         generic_key = key_scancode_map[k]
         if type(generic_key) == HIDKeymod:
             keymod_state.keyup(generic_key)
-
-        if not is_redirecting: return None
+        if k in alt_keys:
+            pinch.stop()
+        if not is_redirecting:
+            pinch.stop()
+            return None
         if type(generic_key) == AKeyCode:
             inject_key_code = InjectKeyCode(generic_key, AKeyEventAction.AKEY_EVENT_ACTION_UP)
             send_data_async(inject_key_code.serialize()); return
@@ -195,6 +215,7 @@ def callback_context_wrapper(
         nonlocal last_mouse_point
         if not is_redirecting or get_config().share_keyboard_only:
             last_mouse_point = None
+            pinch.stop()
             return None
 
         if edge_portal_passing_event.is_set():
@@ -212,6 +233,10 @@ def callback_context_wrapper(
     def mouse_click_callback(_cur_x: int, _cur_y: int, button: mouse.Button, pressed: bool, is_redirecting: bool):
         nonlocal last_mouse_point
         if not is_redirecting or get_config().share_keyboard_only:
+            return None
+
+        if pinch.active and button == mouse.Button.left:
+            pinch.click(pressed)
             return None
 
         hid_button = HID_MouseButton.MOUSE_BUTTON_NONE
@@ -238,8 +263,20 @@ def callback_context_wrapper(
     def mouse_scroll_callback(_cur_x: int, _cur_y: int, _dx: int, dy: int, is_redirecting: bool):
         if not is_redirecting or get_config().share_keyboard_only:
             return None
+        if pinch.active:
+            pinch.wheel(dy)
+            return None
         mouse_scroll_event = MouseScrollEvent(dy)
         send_data_async(mouse_scroll_event.serialize())
+
+    def release_inputs():
+        nonlocal last_mouse_point
+        pinch.stop()
+        keymod_state.key = 0
+        key_list.clear()
+        mouse_button_state.mouse_button = 0
+        last_mouse_point = None
+        send_data_async(MouseClickEvent(mouse_button_state).serialize())
 
     return (
         send_data,
@@ -249,4 +286,5 @@ def callback_context_wrapper(
         mouse_move_callback,
         mouse_click_callback,
         mouse_scroll_callback,
+        release_inputs,
     )
