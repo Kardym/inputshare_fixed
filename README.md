@@ -25,6 +25,12 @@ __InputShare__ enables you to share the keyboard and mouse of your computer with
 > 
 > <a href="https://apps.microsoft.com/detail/9nmwdkc9kp3t?referrer=appbadge&mode=direct"><img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/></a>
 
+## Automatic connection on Windows
+
+Double-click `Start-InputShare.vbs` (or run `main.py`). InputShare stays in the system tray, waits for an authorized USB phone, and starts the session automatically. Unplugging returns to waiting; plugging it in again reconnects. USB debugging must already be enabled and this PC authorized on the phone. No connection dialog is needed for USB.
+
+Run `powershell -ExecutionPolicy Bypass -File scripts/set-startup.ps1` once to enable launch at Windows sign-in. Add `-Disable` to remove it. Duplicate launches are ignored. Use the auto-connect tray's **Manual connection...** for wireless setup, and **Exit InputShare** to stop everything. **Alt+Shift+Q** during a session also exits the waiting process. Connecting a phone leaves keyboard/mouse control on the PC until **Alt+Shift+E** is pressed.
+
 ## Shortcuts in this version
 
 - **Alt+Shift+E**: toggle PC / Android control.

@@ -1,8 +1,16 @@
 import sys
+from multiprocessing import freeze_support
+
+# The waiting process never imports session modules or truncates the session log.
+if __name__ == "__main__":
+    freeze_support()
+    if "--session" not in sys.argv:
+        from launcher import run_launcher
+        sys.exit(run_launcher())
+
 from typing import Callable
 
 from adbutils import AdbInstallError
-from multiprocessing import freeze_support
 from server import deploy_reporter_server, deploy_scrcpy_server, scrcpy_receiver, reporter_receiver
 from input.callbacks import callback_context_wrapper
 from ui.connecting_window import open_connecting_window
@@ -43,18 +51,29 @@ def close_notification_resolver(errno: Exception | None):
             close_notification = Notification(
                 i18n(["Error", "错误"]),
                 i18n([f"Unknown error: {error_name}", f"未知错误：{error_name}"]))
-    get_adb_client().server_kill()
-    LOGGER.write(LogType.Adb, "ADB server killed.")
+    if "--session" not in sys.argv:
+        get_adb_client().server_kill()
+        LOGGER.write(LogType.Adb, "ADB server killed.")
     LOGGER.write(LogType.Info, "Program terminated with: " + str(close_notification))
-    send_notification(close_notification)
+    if "--session" not in sys.argv:
+        send_notification(close_notification)
 
 if __name__ == "__main__":
-    freeze_support()
+    import argparse
+    import threading
+    from pathlib import Path
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--session", action="store_true")
+    parser.add_argument("--serial")
+    parser.add_argument("--stop-file")
+    options = parser.parse_args()
 
     start_adb_server()
-    is_wired_connection = open_connecting_window()
+    is_wired_connection = True if options.serial else open_connecting_window()
     if is_wired_connection:
         device_list = get_adb_client().device_list()
+        if options.serial:
+            device_list = [device for device in device_list if device.serial == options.serial]
         if len(device_list) == 0:
             # selected wired connection
             close_notification_resolver(ADBWiredConnectionError())
@@ -73,6 +92,8 @@ if __name__ == "__main__":
     if get_config().edge_toggling:
         res = deploy_reporter_server()
         if isinstance(res, Exception):
+            stop_scrcpy_receiver()
+            scrcpy_server_process.terminate()
             close_notification_resolver(res)
             sys.exit(1)
         stop_reporter_receiver = reporter_receiver.server_receiver_factory()
@@ -80,13 +101,27 @@ if __name__ == "__main__":
     close_tray = tray_thread_factory(scrcpy_client_socket)
     callbacks  = callback_context_wrapper(scrcpy_client_socket)
 
-    from input.controller import main_loop
-    main_errno = main_loop(*callbacks)
-
-    LOGGER.write(LogType.Info, "Terminated, closing...")
-    stop_scrcpy_receiver()
-    stop_reporter_receiver and stop_reporter_receiver() # type: ignore
-    scrcpy_server_process.terminate()
+    from input.controller import main_loop, schedule_exit
+    watcher_stop = threading.Event()
+    if options.stop_file:
+        stop_path = Path(options.stop_file)
+        def watch_supervisor():
+            while not watcher_stop.wait(0.2):
+                if stop_path.exists():
+                    reason = stop_path.read_text(encoding="utf-8")
+                    schedule_exit(ConnectionResetError("Device disconnected") if reason == "disconnect" else None)
+                    return
+        threading.Thread(target=watch_supervisor, daemon=True).start()
+    try:
+        main_errno = main_loop(*callbacks)
+    finally:
+        watcher_stop.set()
+        LOGGER.write(LogType.Info, "Terminated, closing...")
+        stop_scrcpy_receiver()
+        stop_reporter_receiver and stop_reporter_receiver() # type: ignore
+        scrcpy_server_process.terminate()
+        close_tray()
 
     close_notification_resolver(main_errno)
-    close_tray()
+
+    sys.exit(2 if main_errno is not None else 0)

@@ -106,10 +106,14 @@ def server_receiver_factory() -> VoidCallable:
 
     def stop_receiver():
         nonlocal client_socket, thread, client_stop_event
-        assert type(client_socket) == socket.socket
         client_stop_event.set()
-        client_socket.close()
-        thread.join()
+        if client_socket is not None:
+            try:
+                client_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            client_socket.close()
+        thread.join(timeout=3)
 
     client_socket: socket.socket | None = None
     client_stop_event = threading.Event()

@@ -81,6 +81,8 @@ class ReceivedClipboardText:
 def server_receiver_factory(client_socket: socket.socket) -> VoidCallable:
     from utils.config_manager import get_config
 
+    stopping = threading.Event()
+
     def data_recv(client_socket: socket.socket) -> bool:
         data = client_socket.recv(4096)
         if len(data) > 0:
@@ -109,11 +111,19 @@ def server_receiver_factory(client_socket: socket.socket) -> VoidCallable:
                 LOGGER.write(LogType.Error, "Getting clipboard data error: " + str(e))
                 break
         LOGGER.write(LogType.Server, "Scrcpy receiver stopped.")
+        if not stopping.is_set():
+            from input.controller import schedule_exit
+            schedule_exit(ConnectionResetError("Scrcpy connection closed"))
 
     def stop_receiver():
         nonlocal client_socket, thread
+        stopping.set()
+        try:
+            client_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         client_socket.close()
-        thread.join()
+        thread.join(timeout=2)
 
     thread = threading.Thread(target=receiver, args=[client_socket])
     thread.start()
