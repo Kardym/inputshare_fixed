@@ -80,3 +80,7 @@ For wireless connection:
 InputShare is based on [scrcpy](https://github.com/Genymobile/scrcpy) project and provided a GUI with the build-in ADB invocation.
 
 Thanks to [@yxyh357](https://github.com/yxyh357), who improved the performance of InputShare under high polling-rate.
+
+### Two-finger pan
+
+While controlling Android, hold **M3 (mouse wheel button)** and move the mouse to drag two fingers together in the mouse direction. Release M3 to lift both fingers. The finger spacing stays fixed, including at screen edges, so this pans rather than zooms. No Alt key is needed. Alt+left-drag and Alt+wheel still provide pinch-to-zoom.

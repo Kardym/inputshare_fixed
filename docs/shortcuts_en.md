@@ -37,3 +37,7 @@ The shortcuts following are available after connection and not sharing:
 - With Alt held, wheel up to zoom in or wheel down to zoom out. Release Alt to release all touches.
 - Alt+Shift+E switches control; Alt+Shift+Q exits. These combinations cancel an active gesture.
 - Requires Android to report the scrcpy mouse cursor in `dumpsys input`; gestures are disabled if its position is unavailable. Keyboard-only sharing does not use touch gestures.
+
+### Two-finger pan
+
+While controlling Android, hold **M3 (mouse wheel button)** and move the mouse to drag two fingers together in the mouse direction. Release M3 to lift both fingers. The finger spacing stays fixed, including at screen edges, so this pans rather than zooms. No Alt key is needed. Alt+left-drag and Alt+wheel still provide pinch-to-zoom.

@@ -82,6 +82,7 @@ class PinchGestures:
         self.anchor_down = False
         self.session = 0
         self.dragging = False
+        self.panning = False
 
     @property
     def active(self):
@@ -143,6 +144,7 @@ class PinchGestures:
         self.second = None
         self.anchor_down = False
         self.dragging = False
+        self.panning = False
 
     def stop(self):
         with self.lock:
@@ -151,6 +153,54 @@ class PinchGestures:
             self.anchor = None
             if was_active:
                 LOGGER.write(LogType.Info, 'Pinch released.')
+
+    def stop_alt(self):
+        with self.lock:
+            if not self.panning:
+                self.stop()
+
+    def pan(self, pressed):
+        with self.lock:
+            if not pressed:
+                if self.panning:
+                    self.stop()
+                return
+            if self.panning:
+                return
+            fallback = self.cursor_position
+            self.stop()
+            try:
+                position = self.read_position() or fallback
+            except Exception as error:
+                LOGGER.write(LogType.Error, 'Cannot start two-finger pan: ' + str(error))
+                return
+            if position is None:
+                LOGGER.write(LogType.Info, 'Two-finger pan unavailable: move the Android cursor first.')
+                return
+            size = position.size
+            gap = min(32, (size.width - 1) // 2)
+            x = max(gap, min(size.width - 1 - gap, position.point.x))
+            y = max(0, min(size.height - 1, position.point.y))
+            self.anchor = ScreenPosition(size, ScreenPoint(x - gap, y))
+            self._begin_contacts(ScreenPosition(size, ScreenPoint(x + gap, y)))
+            self.dragging = True
+            self.panning = True
+            LOGGER.write(LogType.Info, 'M3 two-finger pan started.')
+
+    def _pan_move(self, dx, dy):
+        first, second = self.anchor, self.second
+        w, h = first.size.width, first.size.height
+        # Clamp the pair together so its spacing cannot change at an edge.
+        dx = max(-min(first.point.x, second.point.x), min(dx, w - 1 - max(first.point.x, second.point.x)))
+        dy = max(-min(first.point.y, second.point.y), min(dy, h - 1 - max(first.point.y, second.point.y)))
+        if not dx and not dy:
+            return
+        self.anchor = ScreenPosition(first.size, ScreenPoint(first.point.x + dx, first.point.y + dy))
+        self.second = ScreenPosition(second.size, ScreenPoint(second.point.x + dx, second.point.y + dy))
+        self.cursor_position = ScreenPosition(first.size, ScreenPoint((self.anchor.point.x + self.second.point.x) // 2,
+                                                                      self.anchor.point.y))
+        self.send(self._event(self.ANCHOR_ID, self.anchor, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE)
+                  + self._event(self.MOVING_ID, self.second, AMotionEventAction.AMOTION_EVENT_ACTION_MOVE))
 
     def _current_position(self):
         position = self.read_position()
@@ -203,6 +253,9 @@ class PinchGestures:
         with self.lock:
             if not self.dragging or self.second is None:
                 return False
+            if self.panning:
+                self._pan_move(dx, dy)
+                return True
             # Once fingers are down Android may no longer report a mouse hover
             # cursor. Drive the second touch directly from relative PC movement.
             pos = self.second

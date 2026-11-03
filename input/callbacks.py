@@ -116,7 +116,7 @@ def callback_context_wrapper(
             pinch.stop()
             return None
         if k in shift_keys:
-            pinch.stop() # Alt+Shift+E/Q must never leave contacts held.
+            pinch.stop_alt() # Alt+Shift+E/Q must never leave contacts held.
         if k in alt_keys:
             if (not get_config().share_keyboard_only and not mouse_button_state.mouse_button
                     and not keymod_state.key & HIDKeymod.HID_MOD_SHIFT.value):
@@ -142,7 +142,7 @@ def callback_context_wrapper(
         if type(generic_key) == HIDKeymod:
             keymod_state.keyup(generic_key)
         if k in alt_keys:
-            pinch.stop()
+            pinch.stop_alt()
         if not is_redirecting:
             pinch.stop()
             return None
@@ -237,6 +237,15 @@ def callback_context_wrapper(
         if not is_redirecting or get_config().share_keyboard_only:
             return None
 
+        if button == mouse.Button.middle:
+            if pressed and mouse_button_state.mouse_button:
+                mouse_button_state.mouse_button = 0
+                send_data_async(MouseClickEvent(mouse_button_state).serialize())
+            last_mouse_point = (_cur_x, _cur_y)
+            pinch.pan(pressed)
+            return None
+        if pinch.panning:
+            return None
         if pinch.active and button == mouse.Button.left:
             pinch.click(pressed)
             return None

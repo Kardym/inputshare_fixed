@@ -271,3 +271,68 @@ def test_repeated_alt_wheel_survives_missing_hover_after_first_pulse(gesture):
     assert pinch.active and not pinch.touching
     assert len(decode(sent)) == 20
     pinch.stop()
+
+
+def test_m3_holds_two_contacts_and_moves_both_without_zoom(gesture):
+    pinch, cursor, sent = gesture
+    pinch.pan(True)
+    first, second = pinch.anchor.point, pinch.second.point
+    assert pinch.panning and pinch.touching
+    assert second.x - first.x == 64 and second.y == first.y
+    pinch.move(45, -25)
+    assert pinch.anchor.point == ScreenPoint(first.x + 45, first.y - 25)
+    assert pinch.second.point == ScreenPoint(second.x + 45, second.y - 25)
+    pinch.pan(False)
+    assert not pinch.active and not pinch.touching and not pinch.panning
+    assert [(e[1], e[2]) for e in decode(sent)] == [(0, 0), (0, 1), (2, 0), (2, 1), (1, 1), (1, 0)]
+
+
+@pytest.mark.parametrize('dx,dy', [(99999, 99999), (-99999, -99999)])
+def test_m3_preserves_finger_spacing_at_display_edges(gesture, dx, dy):
+    pinch, cursor, sent = gesture
+    pinch.pan(True)
+    pinch.move(dx, dy)
+    assert pinch.second.point.x - pinch.anchor.point.x == 64
+    assert pinch.second.point.y == pinch.anchor.point.y
+    for pos in (pinch.anchor, pinch.second):
+        assert 0 <= pos.point.x < pos.size.width
+        assert 0 <= pos.point.y < pos.size.height
+    pinch.pan(False)
+
+
+def test_alt_release_does_not_cancel_m3_but_global_cleanup_does(gesture):
+    pinch, cursor, sent = gesture
+    pinch.pan(True)
+    pinch.stop_alt()
+    assert pinch.panning and pinch.touching
+    pinch.stop()
+    assert not pinch.panning and not pinch.touching
+    assert [(e[1], e[2]) for e in decode(sent)][-2:] == [(1, 1), (1, 0)]
+
+
+def test_callback_m3_consumes_middle_button_and_pans_both_fingers(monkeypatch):
+    sent = []
+    monkeypatch.setattr(callbacks, 'PinchGestures', lambda send: PinchGestures(send, position))
+    _, _, _, _, move, click, _, reset = callbacks.callback_context_wrapper(SimpleNamespace(sendall=sent.append))
+    click(100, 100, mouse.Button.middle, True, True)
+    move(130, 120, True)
+    click(130, 120, mouse.Button.left, True, True) # cannot replace an M3 gesture
+    click(130, 120, mouse.Button.middle, False, True)
+    events = decode(sent)
+    assert [(e[1], e[2]) for e in events] == [(0, 0), (0, 1), (2, 0), (2, 1), (1, 1), (1, 0)]
+    assert events[2][3] - events[0][3] == events[3][3] - events[1][3]
+    assert events[2][4] - events[0][4] == events[3][4] - events[1][4]
+    hid_mouse = [data for data in sent if data[0] == 13 and data[1:3] == b'\x00\x02']
+    assert not any(data[5] & 4 for data in hid_mouse) # no ordinary middle-button press
+    reset()
+
+
+def test_m3_is_disabled_for_pc_mode_or_keyboard_only(monkeypatch, config):
+    sent = []
+    monkeypatch.setattr(callbacks, 'PinchGestures', lambda send: PinchGestures(send, position))
+    _, _, _, _, _, click, _, reset = callbacks.callback_context_wrapper(SimpleNamespace(sendall=sent.append))
+    click(0, 0, mouse.Button.middle, True, False)
+    config.share_keyboard_only = True
+    click(0, 0, mouse.Button.middle, True, True)
+    assert not decode(sent)
+    reset()
